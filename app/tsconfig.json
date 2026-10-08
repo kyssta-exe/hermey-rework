@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@hermes/shared": ["../shared/src/index.ts"],
+      "@hermes/shared/*": ["../shared/src/*"],
+      "@hermes/plugin-sdk": ["./src/sdk/index.ts"]
+    }
+  },
+  "include": ["src", "../shared/src", "vite.config.ts", "capacitor.config.ts"]
+}
