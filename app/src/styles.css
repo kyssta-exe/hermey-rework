@@ -815,20 +815,34 @@
      rubber-band/overscroll so nothing escapes the screen. This is an
      overlay for mobile only — desktop keeps 100vh exactly as authored. */
   @media (pointer: coarse) {
+    /* Pin the shell to the DYNAMIC viewport and kill rubber-band/overscroll.
+       NOTE: do NOT set height on html/body/#root here — the app shell already
+       owns its height via its own .h-screen (=100dvh, overridden below). Setting
+       100dvh on the roots TOO double-counts the viewport, so the inner shell
+       overflows by the safe-area padding and the composer docks below the fold.
+       We only constrain overflow + scrolling behavior on the roots. */
     html,
     body,
     #root {
-      height: 100dvh;
-      width: 100dvw;
-      max-height: 100dvh;
-      max-width: 100dvw;
       overflow: hidden;
       overscroll-behavior: none;
       -webkit-overscroll-behavior: none;
       touch-action: manipulation;
     }
 
-    /* The shell's own full-window painters ride the dynamic viewport too. */
+    /* Safe-area insets: with viewport-fit=cover, keep content clear of the
+       notch (top) and home indicator (bottom). Applied with border-box so the
+       padding never adds to the shell's own height. */
+    html,
+    body {
+      box-sizing: border-box;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
+    }
+
+    /* The shell's own full-window painters ride the dynamic viewport. */
     .h-screen {
       height: 100dvh;
     }
@@ -837,17 +851,6 @@
     }
     .min-h-screen {
       min-height: 100dvh;
-    }
-
-    /* Safe-area insets: with viewport-fit=cover, keep the shell clear of the
-       notch (top) and home indicator (bottom). Padded on the root painters so
-       docked chrome never sits under the rounded corners. */
-    html,
-    body {
-      padding-top: env(safe-area-inset-top);
-      padding-bottom: env(safe-area-inset-bottom);
-      padding-left: env(safe-area-inset-left);
-      padding-right: env(safe-area-inset-right);
     }
   }
 
