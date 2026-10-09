@@ -239,8 +239,6 @@ class HermeyBridgePlugin : Plugin() {
             "hermes:window:openInTerminal" -> JSObject().put("ok", true)
             "hermes:window:openInstance" -> JSObject().put("ok", true)
             "hermes:window:openBrowser" -> JSObject().put("ok", true)
-            "hermes:window:size" -> null
-            "hermes:window-control" -> null
             "hermes:ambient:claim" -> JSObject().put("value", true)
 
             // ── Wake indicator (in-app) ───────────────────────────────────
@@ -253,22 +251,15 @@ class HermeyBridgePlugin : Plugin() {
             // ── Pet overlay (in-app floating card) ────────────────────────
             "hermes:pet-overlay:open" -> JSObject().put("ok", true)
             "hermes:pet-overlay:close" -> JSObject().put("ok", true)
-            "hermes:pet-overlay:set-bounds" -> null
-            "hermes:pet-overlay:ignore-mouse" -> null
-            "hermes:pet-overlay:set-focusable" -> null
 
             // ── HUD (full-screen view) ────────────────────────────────────
             "hermes:hud:open" -> JSObject().put("ok", true)
             "hermes:hud:close" -> JSObject().put("ok", true)
             "hermes:hud:reset-layout" -> JSObject().put("ok", true)
             "hermes:hud:frost" -> JSObject().put("ok", true)
-            "hermes:hud:ignore-mouse", "hermes:hud:begin-move", "hermes:hud:end-move",
-            "hermes:hud:move-by", "hermes:hud:workspace-transfer", "hermes:hud:set-bounds",
-            "hermes:hud:session" -> null
 
             "hermes:hud-modifier:settings:get" -> JSObject().put("enabled", false)
             "hermes:hud-modifier:settings:set" -> JSObject().put("enabled", args.optBoolean(0, false))
-            "hermes:hud-modifier:permission" -> null
 
             // ── Screenshot (MediaProjection-gated capture) ────────────────
             "hermes:screenshot:settings:get" -> JSObject().put("enabled", settings.screenshotEnabled)
@@ -306,13 +297,6 @@ class HermeyBridgePlugin : Plugin() {
             // ── Version / machine / metrics ───────────────────────────────
             "hermes:version" -> versionInfo()
             "hermes:machine:profile" -> machineProfile()
-            "hermes:get-remote-display-reason" -> null
-            "hermes:sync-status" -> null
-            "hermes:startup-latency:claim" -> null
-            "hermes:app:relaunch" -> null
-            "hermes:desktop-metrics:set-enabled" -> null
-            "hermes:desktop-metrics:crash:take" -> null
-            "hermes:desktop-metrics:crash:ack" -> null
 
             // ── Updates (GitHub-release auto-update) ──────────────────────
             "hermes:updates:check" -> {
@@ -325,8 +309,6 @@ class HermeyBridgePlugin : Plugin() {
             }
             "hermes:updates:branch:get" -> JSObject().put("branch", "android")
             "hermes:updates:branch:set" -> JSObject().put("branch", "android")
-            "hermes:updates:metric:take" -> null
-            "hermes:updates:metric:ack" -> null
 
             // ── Uninstall (no-op on Android) ──────────────────────────────
             "hermes:uninstall:summary" -> JSObject()
@@ -506,15 +488,11 @@ class HermeyBridgePlugin : Plugin() {
             "hermes:logs:reveal" -> JSObject().put("ok", false).put("path", logsRoot(null))
             "hermes:logs:recent" -> JSObject()
                 .put("path", logsRoot(null)).put("lines", logLines())
-            "hermes:logs:renderer-error", "hermes:logs:renderer-line" -> null
 
             // ── Power / battery ───────────────────────────────────────────
             "hermes:power-battery:get" -> JSObject().put("value", onBattery())
-            "hermes:power-resume" -> null
-            "hermes:keep-awake" -> null
 
             // ── Theme / translucency / native theme ───────────────────────
-            "hermes:native-theme", "hermes:translucency", "hermes:titlebar-theme" -> null
             "hermes:secret-storage:get" -> JSObject().put("on", settings.secureTokenStorage)
             "hermes:secret-storage:set" -> {
                 settings.secureTokenStorage = args.optBoolean(0, false)
@@ -526,9 +504,7 @@ class HermeyBridgePlugin : Plugin() {
             "hermes:minimize-to-tray:set" -> JSObject().put("enabled", false).put("available", false)
 
             // ── Context menu / spellcheck (WebView-native behavior) ───────
-            "hermes:context-menu:edit", "hermes:context-menu:copy-image",
-            "hermes:context-menu:spellcheck", "hermes:context-menu:guest-add-word" -> null
-            "hermes:context-menu-spellcheck" -> null
+            "hermes:context-menu:edit", "hermes:context-menu:copy-image" -> null
 
             // ── Microphone permission request ─────────────────────────────
             "hermes:requestMicrophoneAccess" -> {
@@ -543,8 +519,7 @@ class HermeyBridgePlugin : Plugin() {
             "hermes:previewShortcutActive", "hermes:preview-guest-hidden",
             "hermes:connection:active-route", "hermes:devtools:disable-f12",
             "hermes:quick-entry:ack", "hermes:quick-entry:dismiss",
-            "hermes:quick-entry:state", "hermes:pet-overlay:state",
-            "hermes:pet-overlay:control" -> null
+            "hermes:quick-entry:state", "hermes:pet-overlay:state" -> null
 
             // ── Unknown channel: reject like a missing Electron handler ───
             else -> reject("No handler registered for channel '$channel'")

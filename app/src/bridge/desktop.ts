@@ -475,9 +475,11 @@ const desktop = {
   // app never renders (windowControls.custom is always false on Android).
   windowControls: {
     custom: false,
-    minimize: () => void bridgePost('hermes:window-control', 'minimize'),
-    toggleMaximize: () => void bridgePost('hermes:window-control', 'toggle-maximize'),
-    close: () => void bridgePost('hermes:window-control', 'close')
+    // Native window controls (minimize/maximize/close) have no Android
+    // equivalent: local no-ops.
+    minimize: () => {},
+    toggleMaximize: () => {},
+    close: () => {}
   },
 
   // ── Wake indicator (in-app banner) ─────────────────────────────────────
@@ -489,7 +491,8 @@ const desktop = {
   },
 
   chatOnboarding: {
-    size: (mode: WindowSizeMode) => void bridgePost('hermes:window:size', mode)
+    // Window sizing is a desktop concept; no-op on Android.
+    size: (_mode: WindowSizeMode) => {}
   },
 
   // ── Pet overlay (in-app floating card on Android) ──────────────────────
@@ -498,11 +501,12 @@ const desktop = {
     open: (request: PetOverlayOpenRequest) =>
       bridgeCall<{ ok: boolean; bounds?: PetOverlayBounds }>('hermes:pet-overlay:open', request),
     close: () => bridgeCall<{ ok: boolean }>('hermes:pet-overlay:close'),
-    setBounds: (bounds: PetOverlayBounds) => void bridgePost('hermes:pet-overlay:set-bounds', bounds),
-    setIgnoreMouse: (ignore: boolean) => void bridgePost('hermes:pet-overlay:ignore-mouse', ignore),
-    setFocusable: (focusable: boolean) => void bridgePost('hermes:pet-overlay:set-focusable', focusable),
+    // Native always-on-top window primitives have no Android equivalent.
+    setBounds: (_bounds: PetOverlayBounds) => {},
+    setIgnoreMouse: (_ignore: boolean) => {},
+    setFocusable: (_focusable: boolean) => {},
     pushState: (payload: PetOverlayStatePayload) => void bridgePost('hermes:pet-overlay:state', payload),
-    control: (payload: PetOverlayControl) => void bridgePost('hermes:pet-overlay:control', payload),
+    control: (_payload: PetOverlayControl) => {},
     onState: sub('hermes:pet-overlay:state'),
     onControl: sub('hermes:pet-overlay:control')
   },
@@ -521,17 +525,16 @@ const desktop = {
     open: (request?: { sessionId?: null | string; profile?: null | string }) =>
       bridgeCall<{ ok: boolean }>('hermes:hud:open', request),
     close: () => bridgeCall<{ ok: boolean }>('hermes:hud:close'),
-    setIgnoreMouse: (ignore: boolean) => void bridgePost('hermes:hud:ignore-mouse', ignore),
-    beginMove: () => void bridgePost('hermes:hud:begin-move'),
-    endMove: () => void bridgePost('hermes:hud:end-move'),
-    moveBy: (delta: { width: number; height: number }) => void bridgePost('hermes:hud:move-by', delta),
-    setWorkspaceTransfer: (transferring: boolean) =>
-      void bridgePost('hermes:hud:workspace-transfer', transferring),
-    setBounds: (bounds: { x: number; y: number; width: number; height: number }) =>
-      void bridgePost('hermes:hud:set-bounds', bounds),
+    // Native always-on-top window primitives have no Android equivalent.
+    setIgnoreMouse: (_ignore: boolean) => {},
+    beginMove: () => {},
+    endMove: () => {},
+    moveBy: (_delta: { width: number; height: number }) => {},
+    setWorkspaceTransfer: (_transferring: boolean) => {},
+    setBounds: (_bounds: { x: number; y: number; width: number; height: number }) => {},
     resetLayout: () => bridgeCall<{ ok: boolean }>('hermes:hud:reset-layout'),
     setFrost: (showing: boolean) => bridgeCall<{ ok: boolean }>('hermes:hud:frost', showing),
-    setSession: (sessionId: null | string) => void bridgePost('hermes:hud:session', sessionId),
+    setSession: (_sessionId: null | string) => {},
     onGoto: sub('hermes:hud:goto'),
     onChanged: sub('hermes:hud:changed'),
     onCursor: sub('hermes:hud:cursor'),
@@ -541,7 +544,8 @@ const desktop = {
   hudModifier: {
     getSettings: () => bridgeCall<{ enabled: boolean }>('hermes:hud-modifier:settings:get'),
     setEnabled: (enabled: boolean) => bridgeCall<{ enabled: boolean }>('hermes:hud-modifier:settings:set', enabled),
-    openPermissionSettings: () => bridgeCall<void>('hermes:hud-modifier:permission'),
+    // Accessibility/permission settings is an OS window concept; no-op here.
+    openPermissionSettings: async () => {},
     onStatus: subAs<{ enabled: boolean; granted: boolean }>('hermes:hud-modifier:status')
   } satisfies HudModifierApi,
 
@@ -690,7 +694,7 @@ const desktop = {
 
   notify: (payload: HermesNotification) => bridgeCall<boolean>('hermes:notify', payload),
 
-  claimStartupLatency: () => bridgeCall<null | number>('hermes:startup-latency:claim'),
+  claimStartupLatency: () => Promise.resolve<null | number>(null),
 
   requestMicrophoneAccess: () => bridgeCall<boolean>('hermes:requestMicrophoneAccess'),
 
@@ -739,11 +743,11 @@ const desktop = {
 
   contextMenuCopyImage: () => bridgeCall<void>('hermes:context-menu:copy-image'),
 
-  contextMenuSpellcheck: (action: { kind: 'add' | 'replace'; word: string }) =>
-    bridgeCall<void>('hermes:context-menu:spellcheck', action),
+  // Spellcheck is WebView-native on Android; these resolve locally (no
+  // desktop-side spellcheck bridge) so callers never hit a removed channel.
+  contextMenuSpellcheck: async (_action: { kind: 'add' | 'replace'; word: string }) => {},
 
-  contextMenuGuestAddWord: (payload: { webContentsId: number; word: string }) =>
-    bridgeCall<void>('hermes:context-menu:guest-add-word', payload),
+  contextMenuGuestAddWord: async (_payload: { webContentsId: number; word: string }) => {},
 
   onContextMenuSpellcheck: sub('hermes:context-menu-spellcheck'),
 
@@ -775,13 +779,17 @@ const desktop = {
 
   setActiveWork: (payload: HermesActiveWork) => void bridgePost('hermes:active-work', payload),
 
-  setTitleBarTheme: (payload: HermesTitleBarTheme) => void bridgePost('hermes:titlebar-theme', payload),
+  // Titlebar theming is a native-window concept; no-op on Android.
+  setTitleBarTheme: (_payload: HermesTitleBarTheme) => {},
 
-  setNativeTheme: (mode: 'dark' | 'light' | 'system') => void bridgePost('hermes:native-theme', mode),
+  // Native window chrome / translucency / keep-awake have no Android
+  // equivalent: true local no-ops (the removed channels would reject, and
+  // bridgePost would only swallow it after the fact).
+  setNativeTheme: (_mode: 'dark' | 'light' | 'system') => {},
 
-  setTranslucency: (payload: TranslucencyState) => void bridgePost('hermes:translucency', payload),
+  setTranslucency: (_payload: TranslucencyState) => {},
 
-  setKeepAwake: (mode: KeepAwakeMode) => void bridgePost('hermes:keep-awake', mode),
+  setKeepAwake: (_mode: KeepAwakeMode) => {},
 
   // Tray: no-op on Android (foreground-only app).
   minimizeToTray: {
@@ -854,14 +862,16 @@ const desktop = {
 
   getRecentLogs: () => bridgeCall<{ path: string; lines: string[] }>('hermes:logs:recent'),
 
-  reportRendererError: (report: {
+  // Renderer log shipping is a desktop-log-file concern; on Android these are
+  // console-only (the removed native channels would reject).
+  reportRendererError: (_report: {
     label: string
     boundary: string
     message: string
     componentStack: string
-  }) => void bridgePost('hermes:logs:renderer-error', report),
+  }) => {},
 
-  logLine: (line: string) => void bridgePost('hermes:logs:renderer-line', line),
+  logLine: (_line: string) => {},
 
   readDir: (dirPath: string) => bridgeCall<HermesReadDirResult>('hermes:fs:readDir', dirPath),
 
@@ -996,13 +1006,19 @@ const desktop = {
   getVersion: (scope?: { connectionId?: string; profile?: string }) =>
     bridgeCall<DesktopVersionInfo>('hermes:version', scope),
 
-  relaunchApp: () => bridgeCall<void>('hermes:app:relaunch'),
+  // In-place relaunch is a desktop-app concept; on Android the OS owns the
+  // process lifecycle, so this resolves without a bridge round-trip.
+  relaunchApp: async () => {},
 
   getMachineProfile: () => bridgeCall<MachineProfile>('hermes:machine:profile'),
 
-  getRemoteDisplayReason: () => bridgeCall<string | null>('hermes:get-remote-display-reason'),
+  // Desktop-only concepts with no Android equivalent: resolve locally to a
+  // safe default instead of calling a (now-removed) native channel, so the
+  // 1:1 window.hermesDesktop surface stays intact without a bridge round-trip
+  // that would reject.
+  getRemoteDisplayReason: () => Promise.resolve<string | null>(null),
 
-  getSyncStatus: () => bridgeCall<DesktopSyncReceipt | null>('hermes:sync-status'),
+  getSyncStatus: () => Promise.resolve<DesktopSyncReceipt | null>(null),
 
   uninstall: {
     summary: () => bridgeCall<unknown>('hermes:uninstall:summary'),
@@ -1016,15 +1032,18 @@ const desktop = {
     getBranch: () => bridgeCall<{ branch: string }>('hermes:updates:branch:get'),
     setBranch: (name: string) => bridgeCall<{ branch: string }>('hermes:updates:branch:set', name),
     onProgress: sub('hermes:updates:progress'),
-    takePendingRun: () => bridgeCall<UpdateRunReport | null>('hermes:updates:metric:take'),
-    ackPendingRun: (sent: boolean) => bridgeCall<void>('hermes:updates:metric:ack', sent),
+    // Update-run telemetry is a desktop concept; no Android equivalent.
+    takePendingRun: () => Promise.resolve<UpdateRunReport | null>(null),
+    ackPendingRun: (_sent: boolean) => Promise.resolve<void>(undefined as void),
     onPendingRun: sub('hermes:updates:metric:pending')
   },
 
   desktopMetrics: {
-    setEnabled: (on: boolean, profile: string) => bridgeCall<void>('hermes:desktop-metrics:set-enabled', on, profile),
-    takeRendererCrashes: () => bridgeCall<unknown>('hermes:desktop-metrics:crash:take'),
-    ackRendererCrashes: (sent: boolean) => bridgeCall<void>('hermes:desktop-metrics:crash:ack', sent)
+    // Renderer-crash telemetry is a desktop-only concern; local no-ops keep
+    // the 1:1 surface without a removed native channel.
+    setEnabled: (_on: boolean, _profile: string) => Promise.resolve<void>(undefined as void),
+    takeRendererCrashes: () => Promise.resolve<unknown>(null),
+    ackRendererCrashes: (_sent: boolean) => Promise.resolve<void>(undefined as void)
   },
 
   themes: {
