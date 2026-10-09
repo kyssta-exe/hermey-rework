@@ -33,6 +33,16 @@
             </intent-filter>
         </activity>
 
+        <!-- In-app login window (Android mirror of the desktop's dedicated
+             BrowserWindow that loads the gateway's /login page). Launched by
+             the bridge on sign-in; captures the gateway's session cookies. -->
+        <activity
+            android:name=".bridge.LoginActivity"
+            android:exported="false"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:windowSoftInputMode="adjustResize" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

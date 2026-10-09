@@ -266,6 +266,13 @@ declare global {
         options?: DesktopOauthLoginOptions
       ) => Promise<DesktopOauthLoginResult>
       oauthLogoutConnectionConfig: (remoteUrl: string) => Promise<DesktopOauthLogoutResult>
+      passwordLoginConnectionConfig: (payload: {
+        url: string
+        provider: string
+        username: string
+        password: string
+      }) => Promise<DesktopPasswordLoginResult>
+      authStatus: () => Promise<DesktopAuthStatusResult>
       // Hermes Cloud: one portal login powers discovery + silent per-agent
       // sign-in (cloud-auto-discovery Phase 3).
       cloud: {
@@ -1346,6 +1353,18 @@ export interface DesktopOauthLoginResult {
 export interface DesktopOauthLogoutResult {
   ok: boolean
   connected: boolean
+}
+
+export interface DesktopPasswordLoginResult {
+  ok: boolean
+  connected: boolean
+  baseUrl?: string
+  error?: string
+}
+
+export interface DesktopAuthStatusResult {
+  signedIn: boolean
+  authMode: 'oauth' | 'token'
 }
 
 // --- Hermes Cloud (cloud-auto-discovery Phase 3) ---

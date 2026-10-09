@@ -41,6 +41,30 @@ class HermeySettings(context: Context) {
         get() = prefs.getBoolean(KEY_SECURE_TOKEN_STORAGE, false)
         set(value) = prefs.edit().putBoolean(KEY_SECURE_TOKEN_STORAGE, value).apply()
 
+    // ── Session cookies (username/password + OAuth login) ─────────────────
+    // The gateway's password-login / OAuth callback set HttpOnly session
+    // cookies; on Android we capture the Set-Cookie values and replay them
+    // on ws-ticket + API calls (there is no Electron cookie jar). Stored as
+    // a JSON object {name: value}. Empty when signed out / token auth.
+    var sessionCookies: String
+        get() = prefs.getString(KEY_SESSION_COOKIES, "{}") ?: "{}"
+        set(value) = prefs.edit().putString(KEY_SESSION_COOKIES, value).apply()
+
+    fun sessionCookie(name: String): String? {
+        val obj = runCatching { JSONObject(sessionCookies) }.getOrNull() ?: return null
+        return obj.optString(name).ifEmpty { null }
+    }
+
+    fun cookieHeader(): String {
+        val obj = runCatching { JSONObject(sessionCookies) }.getOrNull() ?: return ""
+        return obj.keys().asSequence().joinToString("; ") { k -> "$k=${obj.optString(k)}" }
+    }
+
+    fun hasSession(): Boolean {
+        val obj = runCatching { JSONObject(sessionCookies) }.getOrNull() ?: return false
+        return obj.length() > 0
+    }
+
     // ── Active profile ────────────────────────────────────────────────────
 
     var activeProfile: String?
@@ -160,6 +184,7 @@ class HermeySettings(context: Context) {
         const val KEY_GATEWAY_AUTH_MODE = "gateway_auth_mode"
         const val KEY_CLOUD_PORTAL_URL = "cloud_portal_url"
         const val KEY_SECURE_TOKEN_STORAGE = "secure_token_storage"
+        const val KEY_SESSION_COOKIES = "session_cookies"
         const val KEY_ACTIVE_PROFILE = "active_profile"
         const val KEY_CONNECTIONS = "connections_registry"
         const val KEY_PRIMARY_CONNECTION = "primary_connection_id"

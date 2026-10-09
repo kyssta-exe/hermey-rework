@@ -41,7 +41,10 @@ import java.util.concurrent.ConcurrentHashMap
 class HermeyBridgePlugin : Plugin() {
 
     private val settings by lazy { HermeySettings(context) }
+    private val updater by lazy { AppUpdater(context) }
     private val eventHandlers = ConcurrentHashMap<String, MutableList<(Any?) -> Unit>>()
+    private val bgExecutor: java.util.concurrent.ExecutorService =
+        java.util.concurrent.Executors.newCachedThreadPool()
 
     // ── Capacitor plugin lifecycle ────────────────────────────────────────
 
@@ -183,8 +186,17 @@ class HermeyBridgePlugin : Plugin() {
             "hermes:ssh-config:resolve" -> JSObject()
                 .put("hostname", null).put("identityFile", null).put("port", null).put("user", null)
             "hermes:connection-config:probe" -> probeConnection(args)
-            "hermes:connection-config:oauth-login" -> oauthLogin(args)
-            "hermes:connection-config:oauth-logout" -> JSObject().put("ok", true).put("connected", false)
+            "hermes:connection-config:oauth-login" -> {
+                // Deferred: resolves when the login WebView returns cookies.
+                oauthLogin(args, call)
+                null
+            }
+            "hermes:connection-config:oauth-logout" -> {
+                settings.sessionCookies = "{}"
+                JSObject().put("ok", true).put("connected", false)
+            }
+            "hermes:auth:password-login" -> passwordLogin(args)
+            "hermes:auth:status" -> authStatus()
 
             // ── Cloud ─────────────────────────────────────────────────────
             "hermes:cloud:status" -> JSObject()
@@ -302,13 +314,15 @@ class HermeyBridgePlugin : Plugin() {
             "hermes:desktop-metrics:crash:take" -> null
             "hermes:desktop-metrics:crash:ack" -> null
 
-            // ── Updates (no auto-update on Android: link to release page) ─
-            "hermes:updates:check" -> JSObject()
-                .put("supported", false)
-                .put("mechanism", "external")
-                .put("message", "Updates are managed by your app store or the release page.")
-            "hermes:updates:apply" -> JSObject().put("ok", false).put("manual", true)
-                .put("command", "open the Hermey release page")
+            // ── Updates (GitHub-release auto-update) ──────────────────────
+            "hermes:updates:check" -> {
+                checkUpdates(call)
+                null
+            }
+            "hermes:updates:apply" -> {
+                applyUpdates(args, call)
+                null
+            }
             "hermes:updates:branch:get" -> JSObject().put("branch", "android")
             "hermes:updates:branch:set" -> JSObject().put("branch", "android")
             "hermes:updates:metric:take" -> null
@@ -577,9 +591,22 @@ class HermeyBridgePlugin : Plugin() {
             http.startsWith("http://") -> "ws://" + http.removePrefix("http://")
             else -> http
         }
+        // Auth-required gateways (username/password or OAuth) can't put a
+        // bearer token on the WS upgrade; mint a single-use ticket with the
+        // session cookie instead. Token-auth gateways use the long-lived token.
+        val ticket = if (settings.gatewayAuthMode == "oauth" && settings.hasSession()) {
+            mintWsTicket(http)
+        } else {
+            null
+        }
         val query = buildString {
-            val token = settings.gatewayToken
-            if (!token.isNullOrEmpty()) append("token=").append(Uri.encode(token))
+            when {
+                ticket != null -> append("ticket=").append(Uri.encode(ticket))
+                else -> {
+                    val token = settings.gatewayToken
+                    if (!token.isNullOrEmpty()) append("token=").append(Uri.encode(token))
+                }
+            }
             if (!profile.isNullOrEmpty()) {
                 if (isNotEmpty()) append("&")
                 append("profile=").append(Uri.encode(profile))
@@ -690,15 +717,21 @@ class HermeyBridgePlugin : Plugin() {
     }
 
     private fun probeConnection(args: JSONArray): JSObject {
-        val url = args.optString(0)
+        val url = args.optString(0).trimEnd('/')
 
         return try {
-            val status = httpGet("${url.trimEnd('/')}/api/status")
+            val status = httpGet("$url/api/status")
+            val reachable = status.code in 200..299
+            // auth_required: true → the gateway engages an auth gate (OAuth or
+            // username/password); otherwise legacy token auth.
+            val authRequired = status.json.optBoolean("auth_required", false)
+            val providers = fetchAuthProviders(url)
+
             JSObject().apply {
                 put("baseUrl", url)
-                put("reachable", status.code in 200..299)
-                put("authMode", "token")
-                put("providers", JSONArray())
+                put("reachable", reachable)
+                put("authMode", if (authRequired) "oauth" else "token")
+                put("providers", providers)
                 put("version", status.json.optString("version").ifEmpty { null })
                 put("error", null as String?)
             }
@@ -714,16 +747,219 @@ class HermeyBridgePlugin : Plugin() {
         }
     }
 
-    private fun oauthLogin(args: JSONArray): JSObject {
-        // The remote gateway's OAuth flow runs in the system browser; the
-        // renderer's gateway settings already hand off via openExternal.
-        val url = args.optString(0)
+    /** GET /api/auth/providers → [{name, display_name, supports_password}]. */
+    private fun fetchAuthProviders(url: String): JSONArray {
+        return try {
+            val res = httpGet("$url/api/auth/providers")
+            if (res.code in 200..299) {
+                res.json.optJSONArray("providers") ?: JSONArray()
+            } else {
+                JSONArray()
+            }
+        } catch (_: Throwable) {
+            JSONArray()
+        }
+    }
 
-        return JSObject().apply {
-            put("ok", false)
-            put("baseUrl", url)
-            put("connected", false)
-            put("error", "Sign in through the gateway web login, then paste the token")
+    /**
+     * Username/password login: POST /auth/password-login with
+     * {provider, username, password}, capture the Set-Cookie session cookies,
+     * and store them so subsequent ws-ticket + API calls authenticate.
+     *
+     * args[0] = { url, provider, username, password }
+     */
+    private fun passwordLogin(args: JSONArray): JSObject {
+        val payload = args.optJSONObject(0) ?: return reject("missing payload")
+        val url = payload.optString("url").trimEnd('/')
+        val provider = payload.optString("provider")
+        val username = payload.optString("username")
+        val password = payload.optString("password")
+
+        if (url.isEmpty() || provider.isEmpty() || username.isEmpty() || password.isEmpty()) {
+            return JSObject().put("ok", false).put("error", "url, provider, username and password are required")
+        }
+
+        val body = JSONObject().apply {
+            put("provider", provider)
+            put("username", username)
+            put("password", password)
+            put("next", "")
+        }
+
+        return try {
+            val conn = (URL("$url/auth/password-login").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 15_000
+                readTimeout = 15_000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Accept", "application/json")
+                outputStream.use { it.write(body.toString().toByteArray()) }
+            }
+            val code = conn.responseCode
+            // Capture Set-Cookie headers (may be multiple).
+            val cookies = JSONObject()
+            // Full Set-Cookie scan from the raw header map (HttpURLConnection
+            // exposes repeated Set-Cookie headers here on Android).
+            try {
+                val headerFields = conn.headerFields
+                for ((_, values) in headerFields) {
+                    for (value in values) {
+                        if (value.startsWith("Set-Cookie:", true)) {
+                            val raw = value.removePrefix("Set-Cookie:").trim()
+                            val pair = raw.substringBefore(';').split('=', limit = 2)
+                            if (pair.size == 2) cookies.put(pair[0].trim(), pair[1].trim())
+                        }
+                    }
+                }
+            } catch (_: Throwable) {
+                /* best-effort */
+            }
+            conn.disconnect()
+
+            if (code in 200..299 && cookies.length() > 0) {
+                settings.sessionCookies = cookies.toString()
+                settings.gatewayUrl = url
+                settings.gatewayAuthMode = "oauth"
+                JSObject().apply {
+                    put("ok", true)
+                    put("connected", true)
+                    put("baseUrl", url)
+                }
+            } else {
+                val detail = when (code) {
+                    401, 403 -> "Invalid username or password"
+                    429 -> "Too many attempts — try again shortly"
+                    else -> "Login failed (HTTP $code)"
+                }
+                JSObject().put("ok", false).put("error", detail).put("connected", false)
+            }
+        } catch (err: Throwable) {
+            JSObject().put("ok", false).put("error", err.message ?: "login failed").put("connected", false)
+        }
+    }
+
+    /** Whether a session (password/OAuth) is currently held. */
+    private fun authStatus(): JSObject = JSObject().apply {
+        put("signedIn", settings.hasSession())
+        put("authMode", settings.gatewayAuthMode)
+    }
+
+    /** Mint a single-use WS ticket via POST /api/auth/ws-ticket (auth-required). */
+    private fun mintWsTicket(url: String): String? {
+        val cookie = settings.cookieHeader()
+        if (cookie.isEmpty()) return null
+        return try {
+            val conn = (URL("$url/api/auth/ws-ticket").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 10_000
+                readTimeout = 10_000
+                setRequestProperty("Cookie", cookie)
+                setRequestProperty("Accept", "application/json")
+            }
+            if (conn.responseCode in 200..299) {
+                val text = conn.inputStream.bufferedReader().use { it.readText() }
+                conn.disconnect()
+                JSONObject(text).optString("ticket").ifEmpty { null }
+            } else {
+                conn.disconnect()
+                null
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    // ── Auto-update (GitHub releases) ─────────────────────────────────────
+
+    /** Check GitHub releases for a newer version; resolves the deferred call. */
+    private fun checkUpdates(call: PluginCall) {
+        bgExecutor.execute {
+            val status = updater.checkForUpdates()
+            // Strip the private _apkUrl/_releaseUrl helpers before returning;
+            // keep them only on the client side for apply.
+            val result = JSObject(status.toString())
+            call.resolve(result)
+        }
+    }
+
+    /** One-click update: download the release APK and launch the installer. */
+    private fun applyUpdates(args: JSONArray, call: PluginCall) {
+        // args[0] is the apply options ({dirtyStrategy}); it carries no APK URL,
+        // so always re-check GitHub to find the current release asset.
+        bgExecutor.execute {
+            val status = updater.checkForUpdates()
+            val available = status.optBoolean("updateAvailable", false) ||
+                !status.optString("_apkUrl").isNullOrEmpty()
+            if (!available) {
+                call.resolve(
+                    JSObject().apply {
+                        put("ok", false)
+                        put("updateAvailable", false)
+                        put("message", status.optString("message", "You're up to date."))
+                    }
+                )
+                return@execute
+            }
+            // Install must run on the UI thread (startActivity).
+            val act = activity
+            if (act == null) {
+                call.reject("no activity")
+                return@execute
+            }
+            act.runOnUiThread {
+                val result = updater.applyUpdate(status)
+                call.resolve(JSObject(result.toString()))
+            }
+        }
+    }
+
+    private fun oauthLogin(args: JSONArray, call: PluginCall) {
+        // Mirror of the desktop's dedicated BrowserWindow: open the gateway's
+        // /login page in an in-app WebView. The user completes OAuth or fills
+        // the username/password form; the gateway sets session cookies which we
+        // capture and persist, then resolve. Cancelled/timed-out → not connected.
+        val baseUrl = args.optString(0).trimEnd('/')
+        if (baseUrl.isEmpty()) {
+            call.reject("missing remote url")
+            return
+        }
+        val activity = activity ?: run {
+            call.reject("no activity")
+            return
+        }
+
+        val loginUrl = "$baseUrl/login"
+        // Resolve once; guard against double-settle from the callback.
+        val settled = java.util.concurrent.atomic.AtomicBoolean(false)
+        LoginActivity.loginCompletion = { cookies ->
+            // Guard against double-settle (page finished + explicit finish).
+            if (settled.compareAndSet(false, true)) {
+                if (cookies != null && cookies.length() > 0) {
+                    settings.sessionCookies = cookies.toString()
+                    settings.gatewayUrl = baseUrl
+                    settings.gatewayAuthMode = "oauth"
+                    call.resolve(
+                        JSObject().apply {
+                            put("ok", true)
+                            put("baseUrl", baseUrl)
+                            put("connected", true)
+                        }
+                    )
+                } else {
+                    call.resolve(
+                        JSObject().apply {
+                            put("ok", true)
+                            put("baseUrl", baseUrl)
+                            put("connected", false)
+                        }
+                    )
+                }
+            }
+        }
+
+        activity.runOnUiThread {
+            activity.startActivity(LoginActivity.buildIntent(activity, loginUrl, baseUrl))
         }
     }
 
@@ -832,6 +1068,12 @@ class HermeyBridgePlugin : Plugin() {
             setRequestProperty("Accept", "application/json")
             if (!token.isNullOrEmpty()) {
                 setRequestProperty("Authorization", "Bearer $token")
+            }
+            // Session cookie (username/password or OAuth login) authenticates
+            // REST calls on auth-required gateways that have no bearer token.
+            val cookie = settings.cookieHeader()
+            if (cookie.isNotEmpty()) {
+                setRequestProperty("Cookie", cookie)
             }
             request.optJSONObject("body")?.let { body ->
                 doOutput = true

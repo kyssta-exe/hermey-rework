@@ -38,6 +38,8 @@ import type {
   DesktopOauthLoginOptions,
   DesktopOauthLoginResult,
   DesktopOauthLogoutResult,
+  DesktopPasswordLoginResult,
+  DesktopAuthStatusResult,
   DesktopProfileRoute,
   DesktopRegistryConnection,
   DesktopRegistryConnectionInput,
@@ -651,6 +653,15 @@ const desktop = {
 
   oauthLogoutConnectionConfig: (remoteUrl: string) =>
     bridgeCall<DesktopOauthLogoutResult>('hermes:connection-config:oauth-logout', remoteUrl),
+
+  passwordLoginConnectionConfig: (payload: {
+    url: string
+    provider: string
+    username: string
+    password: string
+  }) => bridgeCall<DesktopPasswordLoginResult>('hermes:auth:password-login', payload),
+
+  authStatus: () => bridgeCall<DesktopAuthStatusResult>('hermes:auth:status'),
 
   // ── Hermes Cloud ───────────────────────────────────────────────────────
 
