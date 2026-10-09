@@ -80,9 +80,8 @@ jobs:
 
       - name: Locate APK
         id: apk
-        working-directory: app/android
         run: |
-          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
+          APK=$(find app/android/app/build/outputs/apk/release -name "*.apk" | head -1)
           echo "path=$APK" >> "$GITHUB_OUTPUT"
           echo "Found APK: $APK"
           ls -la "$APK"
