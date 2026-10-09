@@ -12,6 +12,7 @@ import { Tip } from '@/components/ui/tooltip'
 import type {
   DesktopCloudAgent,
   DesktopCloudOrg,
+  DesktopConnectionConfig,
   DesktopConnectionConfigInput,
   DesktopRegistryConnection
 } from '@/global'
@@ -52,7 +53,7 @@ import { SETTING_IDS, settingElementId } from './settings-manifest'
 import { enrichSelectedSshHost, selectSshHost } from './ssh-host-selection'
 import { useSettingDeepLink } from './use-setting-deep-link'
 
-type Mode = 'local' | 'remote' | 'cloud' | 'ssh'
+type Mode = 'remote' | 'cloud' | 'ssh'
 type AuthMode = 'oauth' | 'token'
 // Hermes Cloud discovery lifecycle for the cloud-mode panel.
 type CloudDiscoverStatus = 'idle' | 'loading' | 'done' | 'error'
@@ -84,7 +85,7 @@ const SSH_HOST_CUSTOM = '__custom__'
 
 const EMPTY_STATE: GatewaySettingsState = {
   envOverride: false,
-  mode: 'local',
+  mode: 'remote',
   remoteAuthMode: 'token',
   remoteOauthConnected: false,
   remoteTokenPreview: null,
@@ -326,8 +327,15 @@ function GatewayConnectionSettings({ embedded, standalone }: { embedded: boolean
     }
   }
 
-  const acceptSavedConfig = (config: GatewaySettingsState): void => {
-    const normalized = normalizeGatewaySettingsState(config)
+  const acceptSavedConfig = (config: GatewaySettingsState | DesktopConnectionConfig): void => {
+    // Hermey is remote-gateway only: a saved 'local' mode (from a desktop
+    // install or an older config) is coerced to 'remote' so the Local
+    // gateway option — removed on Android — can never come back.
+    const coerced =
+      (config as { mode?: string }).mode === 'local'
+        ? ({ ...config, mode: 'remote' } as GatewaySettingsState)
+        : (config as GatewaySettingsState)
+    const normalized = normalizeGatewaySettingsState(coerced)
 
     setState(normalized)
     remote.reset({
@@ -1083,15 +1091,7 @@ function GatewayConnectionSettings({ embedded, standalone }: { embedded: boolean
         <div className="text-[length:var(--conversation-caption-font-size)] font-medium text-(--ui-text-secondary)">
           {g.modeTitle}
         </div>
-        <div className="grid auto-rows-fr grid-cols-1 gap-2 sm:grid-cols-2 min-[72rem]:grid-cols-4">
-          <ModeCard
-            active={state.mode === 'local'}
-            description={g.localDesc}
-            disabled={state.envOverride}
-            icon={Monitor}
-            onSelect={() => setState(current => ({ ...current, mode: 'local' }))}
-            title={g.localTitle}
-          />
+        <div className="grid auto-rows-fr grid-cols-1 gap-2 sm:grid-cols-2 min-[72rem]:grid-cols-3">
           <ModeCard
             active={state.mode === 'cloud'}
             description={g.cloudDesc}
