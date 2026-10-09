@@ -26,11 +26,11 @@ object ScreenshotCapture {
     fun onConsentGranted(context: Context, resultCode: Int, data: Intent) {
         val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         projection = manager.getMediaProjection(resultCode, data)
-        HermeyBridge.notifyScreenshotStatus(granted = true)
+        HermeyBridgePlugin.notifyScreenshotStatus(granted = true)
     }
 
     fun onConsentDenied() {
-        HermeyBridge.notifyScreenshotStatus(granted = false)
+        HermeyBridgePlugin.notifyScreenshotStatus(granted = false)
     }
 
     fun captureOnce(context: Context): String? {
@@ -46,7 +46,7 @@ object ScreenshotCapture {
             width,
             height,
             density,
-            android.view.DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
             imageReader.surface,
             null,
             Handler(Looper.getMainLooper())

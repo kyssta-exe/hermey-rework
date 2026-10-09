@@ -16,6 +16,7 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.kyssta.hermey.BuildConfig
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -62,12 +63,12 @@ class HermeyBridgePlugin : Plugin() {
         try {
             val result = dispatch(channel, args, call)
             if (result != null) {
-                call.resolve(result)
+                call.resolve(JSObject(result.toString()))
             } else {
                 call.resolve(JSObject())
             }
         } catch (err: Throwable) {
-            call.reject("hermes:call failed for $channel: ${err.message}", err)
+            call.reject("hermes:call failed for $channel: ${err.message}")
         }
     }
 
@@ -111,7 +112,7 @@ class HermeyBridgePlugin : Plugin() {
 
     /** JS subscribes to `hermes:bridge-event`; every bridge event routes here. */
     @PluginMethod
-    fun addListener(call: PluginCall) {
+    override fun addListener(call: PluginCall) {
         // Capacitor delivers all plugin events through this single channel.
         call.resolve()
     }
@@ -154,7 +155,7 @@ class HermeyBridgePlugin : Plugin() {
 
     // ── Channel dispatch ──────────────────────────────────────────────────
 
-    private fun dispatch(channel: String, args: JSONArray, call: PluginCall): JSObject? {
+    private fun dispatch(channel: String, args: JSONArray, call: PluginCall): JSONObject? {
         val ctx = context
         return when (channel) {
 
@@ -593,7 +594,8 @@ class HermeyBridgePlugin : Plugin() {
         val agents = JSONArray()
         val sources = JSONArray()
 
-        connections.forEach { conn ->
+        for (i in 0 until connections.length()) {
+            val conn = connections.optJSONObject(i) ?: continue
             agents.put(
                 JSObject().apply {
                     put("connectionId", conn.optString("id"))
@@ -815,7 +817,7 @@ class HermeyBridgePlugin : Plugin() {
 
     // ── REST API ──────────────────────────────────────────────────────────
 
-    private fun gatewayApi(args: JSONArray): JSObject {
+    private fun gatewayApi(args: JSONArray): JSONObject {
         val request = args.optJSONObject(0) ?: return reject("missing request")
         val path = request.optString("path")
         val method = request.optString("method", "GET").uppercase()
@@ -955,9 +957,10 @@ class HermeyBridgePlugin : Plugin() {
     }
 
     private fun saveImageBuffer(args: JSONArray): JSObject {
-        val data = args.optString("data")
-        val ext = args.optString("ext", "png")
-        val name = args.optString("name", "hermes-image.$ext")
+        val payload = args.optJSONObject(0) ?: JSONObject()
+        val data = payload.optString("data")
+        val ext = payload.optString("ext", "png")
+        val name = payload.optString("name", "hermes-image.$ext")
         val dir = File(context.filesDir, "images").apply { mkdirs() }
         val file = File(dir, name)
         file.writeBytes(Base64.decode(data, Base64.DEFAULT))
@@ -966,7 +969,8 @@ class HermeyBridgePlugin : Plugin() {
     }
 
     private fun savePastedText(args: JSONArray): JSObject {
-        val text = args.optString("text")
+        val payload = args.optJSONObject(0) ?: JSONObject()
+        val text = payload.optString("text")
         val dir = File(context.filesDir, "pasted").apply { mkdirs() }
         val file = File(dir, "pasted-${System.currentTimeMillis()}.txt")
         file.writeText(text)

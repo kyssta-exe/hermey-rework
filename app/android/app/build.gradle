@@ -1,4 +1,5 @@
 apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
 
 android {
     namespace "com.kyssta.hermey"
@@ -10,6 +11,9 @@ android {
         versionCode 2
         versionName "0.0.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        buildFeatures {
+            buildConfig = true
+        }
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
@@ -45,6 +49,7 @@ repositories {
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlinVersion"
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
