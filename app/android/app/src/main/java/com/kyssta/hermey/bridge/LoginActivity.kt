@@ -3,9 +3,9 @@ package com.kyssta.hermey.bridge
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
-import android.graphics.Bitmap
-import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -35,14 +35,12 @@ class LoginActivity : Activity() {
         @Volatile
         var loginCompletion: ((JSONObject?) -> Unit)? = null
 
-        // Cookie name fragments the gateway uses for its session (see
-        // hermes_cli/dashboard_auth/cookies.py — AT_/RT_/session variants).
-        private val SESSION_COOKIE_HINTS = listOf("hermes_session", "hermes_at", "hermes_rt", "session")
+        private const val POLL_INTERVAL_MS = 750L
 
-        private fun hasSessionCookie(rawCookie: String?): Boolean {
-            if (rawCookie.isNullOrEmpty()) return false
-            return SESSION_COOKIE_HINTS.any { hint -> rawCookie.contains(hint, ignoreCase = true) }
-        }
+        // The access-token cookie is the authoritative "signed in" signal
+        // (matches desktop hasOauthSessionCookie). The provider/pkce hint
+        // cookies appear early in the flow and must NOT trigger completion.
+        private const val ACCESS_TOKEN_COOKIE = "hermes_session_at"
 
         fun buildIntent(activity: Activity, loginUrl: String, baseUrl: String): Intent =
             Intent(activity, LoginActivity::class.java).apply {
@@ -54,6 +52,15 @@ class LoginActivity : Activity() {
     private lateinit var webView: WebView
     private var baseUrl: String = ""
     private var finished = false
+    private val handler = Handler(Looper.getMainLooper())
+
+    private val pollRunnable = object : Runnable {
+        override fun run() {
+            if (finished) return
+            checkForSession()
+            handler.postDelayed(this, POLL_INTERVAL_MS)
+        }
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,9 +69,16 @@ class LoginActivity : Activity() {
         val loginUrl = intent.getStringExtra(EXTRA_LOGIN_URL) ?: run { cancel(); return }
         baseUrl = intent.getStringExtra(EXTRA_BASE_URL) ?: loginUrl
 
-        CookieManager.getInstance().setAcceptCookie(true)
+        webView = WebView(this)
 
-        webView = WebView(this).apply {
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true)
+        // Third-party cookies: the OAuth/SSO redirect chain crosses hosts
+        // (gateway → IdP → gateway); without this the callback cookies are
+        // dropped. Safe here — this window exists solely for the login flow.
+        cookieManager.setAcceptThirdPartyCookies(webView, true)
+
+        webView.apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.databaseEnabled = true
@@ -72,21 +86,19 @@ class LoginActivity : Activity() {
             settings.loadWithOverviewMode = true
 
             webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                    // Follow in-app so the cookie jar stays ours; only escape
-                    // to the system browser for genuinely external hosts.
-                    val host = Uri.parse(request.url.toString()).host ?: return false
-                    val baseHost = Uri.parse(baseUrl).host
-                    if (host != baseHost) {
-                        // External identity provider: open externally, don't
-                        // follow inside the login window.
-                        return false
-                    }
+                override fun shouldOverrideUrlLoading(
+                    view: WebView,
+                    request: WebResourceRequest
+                ): Boolean {
+                    // Follow everything in-app so the cookie jar stays ours and
+                    // the OAuth redirect chain completes inside this window.
                     return false
                 }
 
                 override fun onPageFinished(view: WebView, url: String) {
                     super.onPageFinished(view, url)
+                    // Persist any cookies the callback just set, then check.
+                    CookieManager.getInstance().flush()
                     checkForSession()
                 }
             }
@@ -94,13 +106,32 @@ class LoginActivity : Activity() {
             loadUrl(loginUrl)
         }
         setContentView(webView)
+
+        // Belt-and-braces poll (desktop uses the same 750ms fallback) for IdPs
+        // that finish via in-page JS with no navigation event.
+        handler.postDelayed(pollRunnable, POLL_INTERVAL_MS)
     }
 
-    /** Poll the cookie jar for a session cookie; finish when one appears. */
+    /** True only when the real access-token cookie is present with a value. */
+    private fun hasAccessToken(cookie: String?): Boolean {
+        if (cookie.isNullOrEmpty()) return false
+        return cookie.split(';').any { pair ->
+            val kv = pair.trim().split('=', limit = 2)
+            if (kv.size != 2) {
+                false
+            } else {
+                val name = kv[0].trim().removePrefix("__Host-").removePrefix("__Secure-")
+                name == ACCESS_TOKEN_COOKIE && kv[1].trim().isNotEmpty()
+            }
+        }
+    }
+
+    /** Poll the cookie jar for the access-token cookie; finish when it appears. */
     private fun checkForSession() {
         if (finished) return
         val cookie = CookieManager.getInstance().getCookie(baseUrl)
-        if (hasSessionCookie(cookie)) {
+        if (hasAccessToken(cookie)) {
+            CookieManager.getInstance().flush()
             finish(collectCookies(cookie))
         }
     }
@@ -128,6 +159,7 @@ class LoginActivity : Activity() {
     private fun finish(cookies: JSONObject) {
         if (finished) return
         finished = true
+        handler.removeCallbacks(pollRunnable)
         loginCompletion?.invoke(cookies)
         finish()
     }
@@ -135,11 +167,13 @@ class LoginActivity : Activity() {
     private fun cancel() {
         if (finished) return
         finished = true
+        handler.removeCallbacks(pollRunnable)
         loginCompletion?.invoke(null)
         finish()
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(pollRunnable)
         loginCompletion = null
         super.onDestroy()
     }
