@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { useI18n } from '@/i18n'
 import { capitalize, normalize } from '@/lib/text'
@@ -170,8 +170,43 @@ export function Intro({ personality, seed }: IntroProps) {
 
   const body = bodies?.[Math.abs(rotationSeed) % bodies.length] ?? copy.body
 
+  // TEMP DIAGNOSTIC: one-shot geometry report when the intro mounts, so we can
+  // see the real composer/shell/intro rects on-device (logcat / console).
+  const diagRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = diagRef.current
+    if (!el) return
+    const t = setTimeout(() => {
+      const vh = window.innerHeight
+      const shell = document.querySelector('[data-contrib-shell]') as HTMLElement | null
+      const comp = document.querySelector('[data-composer-bounds]') as HTMLElement | null
+      const report = {
+        vh,
+        introTop: Math.round(el.getBoundingClientRect().top),
+        shellH: shell ? Math.round(shell.getBoundingClientRect().height) : null,
+        shellBottom: shell ? Math.round(shell.getBoundingClientRect().bottom) : null,
+        composerBottom: comp ? Math.round(comp.getBoundingClientRect().bottom) : null,
+        composerMeasured:
+          getComputedStyle(document.documentElement).getPropertyValue('--composer-measured-height') ||
+          '(unset)',
+        docScrollH: document.documentElement.scrollHeight
+      }
+      // eslint-disable-next-line no-console
+      console.log('[HERMEY-LAYOUT-DIAG]', JSON.stringify(report))
+      try {
+        ;(window as unknown as { hermesDesktop?: { logLine?: (l: string) => void } }).hermesDesktop?.logLine?.(
+          `[HERMEY-LAYOUT-DIAG] ${JSON.stringify(report)}`
+        )
+      } catch {
+        /* ignore */
+      }
+    }, 800)
+    return () => clearTimeout(t)
+  }, [])
+
   return (
     <div
+      ref={diagRef}
       className="pointer-events-none flex w-full min-w-0 flex-col items-center justify-center px-0.5 py-6 text-center text-muted-foreground sm:px-6 lg:px-8"
       data-slot="aui_intro"
     >
