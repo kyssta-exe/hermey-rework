@@ -807,6 +807,39 @@
     font-size: var(--dt-base-size, 0.875rem);
   }
 
+  /* ── Mobile (Capacitor WebView) viewport discipline ───────────────────
+     On a phone, 100vh/100vw (the h-screen/w-screen utilities the desktop
+     shell uses) include the area behind the keyboard and browser chrome, so
+     panes overflow off-screen and content hides under the composer. For
+     touch-primary devices, pin the shell to the DYNAMIC viewport and kill
+     rubber-band/overscroll so nothing escapes the screen. This is an
+     overlay for mobile only — desktop keeps 100vh exactly as authored. */
+  @media (pointer: coarse) {
+    html,
+    body,
+    #root {
+      height: 100dvh;
+      width: 100dvw;
+      max-height: 100dvh;
+      max-width: 100dvw;
+      overflow: hidden;
+      overscroll-behavior: none;
+      -webkit-overscroll-behavior: none;
+      touch-action: manipulation;
+    }
+
+    /* The shell's own full-window painters ride the dynamic viewport too. */
+    .h-screen {
+      height: 100dvh;
+    }
+    .w-screen {
+      width: 100dvw;
+    }
+    .min-h-screen {
+      min-height: 100dvh;
+    }
+  }
+
   body {
     margin: 0;
     background: var(--ui-chat-surface-background);

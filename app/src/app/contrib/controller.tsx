@@ -33,12 +33,13 @@ import {
   toggleTargetZoneTabStrip
 } from '@/components/pane-shell/tree/store'
 import { $workspaceOwnerLabels, workspaceOwnerTitle } from '@/components/pane-shell/workspace-scope'
-import { SidebarProvider } from '@/components/ui/sidebar'
+import { SidebarProvider, useSidebar } from '@/components/ui/sidebar'
 import { discoverBundledPlugins } from '@/contrib/plugins'
 import { Slot } from '@/contrib/react/slot'
 import { registry } from '@/contrib/registry'
 import { discoverRuntimePlugins } from '@/contrib/runtime-loader'
 import { LocalizedTabTitle, translateNow } from '@/i18n'
+import { useMobileSidebarGestures } from '@/hooks/use-mobile-sidebar-gestures'
 import { NEW_SESSION_TITLE, sessionTitle as storedSessionTitle } from '@/lib/chat-runtime'
 import {
   Download,
@@ -123,6 +124,21 @@ import { bindLayoutSides } from './layout-sides'
 import { FilesPane, LogsPane, ReviewPaneContent } from './panes'
 import { ContribWiring, WiredPane } from './wiring'
 import { WorkspacePageHeaderHostContext } from './workspace-page-header'
+
+/**
+ * Mobile-only shell gesture host: wires swipe-from-left-edge to open the
+ * sidebar drawer and swipe-left to close it (the touch equivalent of the
+ * desktop's sidebar hotkey). Must sit inside <SidebarProvider>. A pure
+ * addition for touch input — desktop behavior is untouched.
+ */
+function MobileSidebarGestureHost() {
+  const { setOpenMobile } = useSidebar()
+  useMobileSidebarGestures(
+    () => setOpenMobile(true),
+    () => setOpenMobile(false)
+  )
+  return null
+}
 
 /**
  * Stripped-down app root (bb/contrib-areas) on the layout TREE model, mounting
@@ -811,6 +827,7 @@ export function ContribController() {
     >
       <ContribWiring>
         <AppContextMenu />
+        <MobileSidebarGestureHost />
         <div
           className="flex h-screen min-h-0 w-screen flex-col bg-(--ui-bg-chrome) text-(--ui-text-primary)"
           // Window-glass hook: this div and the sidebar-wrapper above it are
