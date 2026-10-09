@@ -39,7 +39,7 @@ import { Slot } from '@/contrib/react/slot'
 import { registry } from '@/contrib/registry'
 import { discoverRuntimePlugins } from '@/contrib/runtime-loader'
 import { LocalizedTabTitle, translateNow } from '@/i18n'
-import { useMobileSidebarGestures } from '@/hooks/use-mobile-sidebar-gestures'
+import { useShellSwipeGestures } from '@/hooks/use-mobile-sidebar-gestures'
 import { NEW_SESSION_TITLE, sessionTitle as storedSessionTitle } from '@/lib/chat-runtime'
 import {
   Download,
@@ -69,7 +69,8 @@ import {
   setSidebarOpen,
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
-  sidebarSide
+  sidebarSide,
+  toggleRightSide
 } from '@/store/layout'
 import { $profiles } from '@/store/profile'
 import { $profileRailVisible } from '@/store/profile-rail-prefs'
@@ -126,17 +127,24 @@ import { ContribWiring, WiredPane } from './wiring'
 import { WorkspacePageHeaderHostContext } from './workspace-page-header'
 
 /**
- * Mobile-only shell gesture host: wires swipe-from-left-edge to open the
- * sidebar drawer and swipe-left to close it (the touch equivalent of the
- * desktop's sidebar hotkey). Must sit inside <SidebarProvider>. A pure
+ * Mobile-only shell gesture host: wires edge-swipe gestures for the
+ * sidebars (the touch equivalent of the desktop's sidebar hotkeys). Swipe
+ * right from the left edge opens the left sidebar; swipe left from the right
+ * edge opens the right side. Must sit inside <SidebarProvider>. A pure
  * addition for touch input — desktop behavior is untouched.
  */
 function MobileSidebarGestureHost() {
-  const { setOpenMobile } = useSidebar()
-  useMobileSidebarGestures(
-    () => setOpenMobile(true),
-    () => setOpenMobile(false)
-  )
+  const { openMobile, setOpenMobile } = useSidebar()
+  useShellSwipeGestures({
+    onOpenLeft: () => setOpenMobile(true),
+    onCloseLeft: () => setOpenMobile(false),
+    // The right side is a layout-tree pane; its toggle is imperative.
+    onOpenRight: () => toggleRightSide(),
+    onCloseRight: () => toggleRightSide(),
+    // While the left drawer is open, a swipe-left anywhere closes it.
+    overlayOpen: openMobile,
+    onDismissOverlay: () => setOpenMobile(false)
+  })
   return null
 }
 
