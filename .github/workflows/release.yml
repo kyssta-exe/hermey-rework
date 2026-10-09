@@ -41,6 +41,11 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 12266719
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: true
+          packages: platform-tools build-tools\;35.0.0 platforms\;android-35
 
       - name: Install web dependencies
         working-directory: app
