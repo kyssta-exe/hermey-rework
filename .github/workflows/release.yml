@@ -1,0 +1,102 @@
+name: Build & Release APK
+
+# Builds the Hermey Android APK on every push to main (and on tags), then
+# attaches it to a GitHub release. The web renderer is built with Vite,
+# synced into the Android project with Capacitor, and packaged with Gradle.
+#
+# Release signing: this build produces an APK signed with the debug keystore
+# (Gradle's default when no release signingConfig is configured). To ship a
+# properly signed release, add ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD
+# / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD as repository secrets and uncomment
+# the signingConfig block in app/android/app/build.gradle.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install web dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Build renderer (Vite)
+        working-directory: app
+        run: npm run build
+        env:
+          # The renderer bundle is ~14k modules; the default Node heap OOMs on
+          # CI runners with 7GB. Raise it (matches the local build note).
+          NODE_OPTIONS: --max-old-space-size=6144
+
+      - name: Sync Capacitor -> Android
+        working-directory: app
+        run: npx cap sync android
+
+      - name: Build release APK
+        working-directory: app/android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Locate APK
+        id: apk
+        working-directory: app/android
+        run: |
+          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          echo "Found APK: $APK"
+          ls -la "$APK"
+
+      - name: Compute version + SHA-256
+        id: meta
+        run: |
+          VERSION=$(grep -oP 'versionName\s+"\K[^"]+' app/android/app/build.gradle | head -1)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          SHA=$(sha256sum "${{ steps.apk.outputs.path }}" | cut -d' ' -f1)
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION  SHA-256: $SHA"
+
+      - name: Create GitHub release with APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.meta.outputs.version }}
+          name: Hermey v${{ steps.meta.outputs.version }}
+          body: |
+            ## Hermey v${{ steps.meta.outputs.version }}
+
+            1:1 Android port of the Hermes Desktop app — identical renderer,
+            fonts, styles, and feature set, running on Capacitor with a remote
+            gateway.
+
+            **APK:** `app-release.apk` (debug-signed)
+            **SHA-256:** `${{ steps.meta.outputs.sha256 }}`
+
+            Install with `adb install app-release.apk` or sideload on-device.
+          files: ${{ steps.apk.outputs.path }}
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
